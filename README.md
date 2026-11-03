@@ -147,12 +147,28 @@ If using VMware NAT networking:
 
 ## 5. User Workflow
 
-### Inside VMware Linux VM
-
-Run the automated setup script inside the VM:
+After cloning or downloading and extracting the repository ZIP, the single root entrypoint is:
 
 ```bash
-bash vm/setup_opencode_vm.sh
+./setup.sh
+```
+
+Running `./setup.sh` provides an interactive menu or accepts flags:
+- `./setup.sh --host`: Configures and starts the Host Gateway on your host machine.
+- `./setup.sh --vm`: Configures the VM Agent inside a VMware Linux guest.
+- `./setup.sh --test`: Runs the full automated verification test suite.
+
+---
+
+### Step-by-Step Walkthrough
+
+#### Inside VMware Linux VM
+
+Run the setup script inside each VMware VM:
+
+```bash
+./setup.sh --vm
+# (or: bash vm/setup_opencode_vm.sh)
 ```
 
 The script automatically:
@@ -281,8 +297,12 @@ To prevent naming collisions when multiple VMs configure the same provider or mo
 
 | Command | Location | Description |
 |---|---|---|
-| `bash vm/setup_opencode_vm.sh` | VM | Sets up VM agent, starts systemd service, outputs registration command |
-| `bash scripts/install_host.sh` | Host | Installs host gateway and user systemd service |
+| `./setup.sh` | Any | Universal entrypoint with interactive menu (`--host`, `--vm`, `--test`) |
+| `./setup.sh --host` | Host | Installs and starts Host Gateway & OpenCode integration |
+| `./setup.sh --vm` | VM | Sets up VM agent, starts systemd service, outputs registration command |
+| `./setup.sh --test` | Any | Runs the full 25-test automated test suite |
+| `bash vm/setup_opencode_vm.sh` | VM | Direct VM agent installer |
+| `bash scripts/install_host.sh` | Host | Direct host gateway installer |
 | `bash scripts/register_vm.sh <URL> <TOKEN>` | Host | Manually registers a VM by URL and token |
 | `bash scripts/update_vm.sh [VM_ID\|all]` | Host | Refreshes model catalog from one or all registered VMs |
 | `bash scripts/remove_vm.sh <VM_ID>` | Host | Unregisters a VM and removes its models from OpenCode |
