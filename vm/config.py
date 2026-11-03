@@ -155,8 +155,24 @@ class VMConfig:
         self.registration_tokens[token_str] = reg_token
         return reg_token
 
+    def _reload_tokens_from_disk(self) -> None:
+        """Reload registration tokens from config file on disk if modified."""
+        cfg_path = Path(self.config_file_path) if self.config_file_path else get_default_config_path()
+        if cfg_path.exists():
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                raw_tokens = data.get("registration_tokens", {})
+                for k, v in raw_tokens.items():
+                    self.registration_tokens[k] = RegistrationToken.from_dict(v)
+            except Exception as e:
+                logger.debug("Failed reloading tokens from disk: %s", e)
+
     def validate_registration_token(self, token_str: str, consume: bool = True) -> bool:
         """Validate a registration token. If consume=True, marks it as used immediately."""
+        if token_str not in self.registration_tokens:
+            self._reload_tokens_from_disk()
+
         token = self.registration_tokens.get(token_str)
         if not token:
             return False

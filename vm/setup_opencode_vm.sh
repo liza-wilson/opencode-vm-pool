@@ -150,7 +150,8 @@ if mgr.is_systemd_available():
     cfg_path = '$CONFIG_PATH'
     if mgr.install_unit(python_bin, script_bin, cfg_path):
         mgr.enable_and_start()
-        print('--> systemd service enabled and started.')
+        mgr.restart()
+        print('--> systemd service enabled and restarted with latest token.')
     else:
         print('Notice: systemd service registration skipped.')
 else:
@@ -171,6 +172,9 @@ done
 if [ "$HEALTH_OK" = false ]; then
   echo "Notice: systemd service did not respond on port $PORT. Checking logs..."
   $SUDO journalctl -u opencode-vm-agent.service -n 10 --no-pager 2>/dev/null || true
+  echo "--> Stopping any stale background agent..."
+  pkill -f "agent.py" 2>/dev/null || true
+  sleep 0.5
   echo "--> Starting agent directly in background..."
   nohup python3 "$SCRIPT_DIR/agent.py" --config "$CONFIG_PATH" --port "$PORT" > "$CONFIG_DIR/agent.log" 2>&1 &
   sleep 1
@@ -182,6 +186,15 @@ if [ "$HEALTH_OK" = false ]; then
   fi
 else
   echo "--> Agent verified running and healthy on http://127.0.0.1:$PORT/health"
+fi
+
+# Verify registration token locally before displaying command
+echo "--> Verifying registration token endpoint..."
+if ! curl -s -m 2 "http://127.0.0.1:$PORT/register/$TOKEN" 2>/dev/null | grep -q "OpenCode VM Pool"; then
+  echo "Notice: Refreshing token state on running agent..."
+  pkill -f "agent.py" 2>/dev/null || true
+  nohup python3 "$SCRIPT_DIR/agent.py" --config "$CONFIG_PATH" --port "$PORT" > "$CONFIG_DIR/agent.log" 2>&1 &
+  sleep 1
 fi
 
 python3 -c "
