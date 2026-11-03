@@ -128,3 +128,4 @@ else:
     python3 -m unittest discover -s "$SCRIPT_DIR/tests" -v
     ;;
 esac
+

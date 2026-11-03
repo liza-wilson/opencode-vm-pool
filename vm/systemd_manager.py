@@ -74,14 +74,13 @@ Type=simple
 WorkingDirectory={work_dir}
 ExecStart={python_exec} {agent_script_path} --config {config_path}
 Restart=always
-RestartSec=5
+RestartSec=3
 Environment=PYTHONUNBUFFERED=1
 StandardOutput=journal
 StandardError=journal
 
-# Hardening
-ProtectSystem=full
-ProtectHome=read-only
+# File & Directory access
+ReadWritePaths=/etc/opencode-vm-pool /home /root /tmp
 PrivateTmp=true
 NoNewPrivileges=true
 

@@ -128,6 +128,14 @@ PORT=$(echo "$TOKEN_JSON" | grep -o '"port": *[0-9]*' | grep -o '[0-9]*')
 VM_NAME=$(echo "$TOKEN_JSON" | grep -o '"vm_name": *"[^"]*"' | cut -d'"' -f4)
 VM_ID=$(echo "$TOKEN_JSON" | grep -o '"vm_id": *"[^"]*"' | cut -d'"' -f4)
 
+# Open firewall port if ufw or iptables is present
+if command -v ufw >/dev/null 2>&1; then
+  $SUDO ufw allow "$PORT/tcp" >/dev/null 2>&1 || true
+fi
+if command -v iptables >/dev/null 2>&1; then
+  $SUDO iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null || true
+fi
+
 # 5. Configure & Start Systemd Service
 echo "--> Setting up systemd service for persistent agent..."
 python3 -c "
@@ -150,7 +158,32 @@ else:
 "
 
 # 6. Verify Server Health & Discovered Models
-echo "--> Verifying agent health and model discovery..."
+echo "--> Verifying agent HTTP server is active and listening on port $PORT..."
+HEALTH_OK=false
+for i in $(seq 1 10); do
+  if curl -s -m 2 "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+    HEALTH_OK=true
+    break
+  fi
+  sleep 0.5
+done
+
+if [ "$HEALTH_OK" = false ]; then
+  echo "Notice: systemd service did not respond on port $PORT. Checking logs..."
+  $SUDO journalctl -u opencode-vm-agent.service -n 10 --no-pager 2>/dev/null || true
+  echo "--> Starting agent directly in background..."
+  nohup python3 "$SCRIPT_DIR/agent.py" --config "$CONFIG_PATH" --port "$PORT" > "$CONFIG_DIR/agent.log" 2>&1 &
+  sleep 1
+  if curl -s -m 2 "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+    echo "--> Agent is now running in background."
+    HEALTH_OK=true
+  else
+    echo "Warning: Agent is not responding on 127.0.0.1:$PORT. Check $CONFIG_DIR/agent.log."
+  fi
+else
+  echo "--> Agent verified running and healthy on http://127.0.0.1:$PORT/health"
+fi
+
 python3 -c "
 import sys, json
 sys.path.insert(0, '$PROJECT_ROOT')
