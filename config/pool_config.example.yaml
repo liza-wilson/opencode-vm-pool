@@ -1,0 +1,23 @@
+# OpenCode VMware Model Pool - Default Gateway Configuration
+gateway:
+  host: "127.0.0.1"
+  port: 8080
+  default_cooldown_seconds: 60
+  max_retries: 3
+  allow_cross_vm_failover: true
+  health_check_interval_seconds: 30
+
+database:
+  path: "~/.config/opencode-vm-pool/registry.db"
+
+opencode:
+  config_path: "~/.config/opencode/opencode.json"
+  provider_id: "vm-pool"
+  provider_name: "OpenCode VM Pool"
+
+networking:
+  recommended_mode: "bridged"
+  firewall_ports:
+    - 4096  # VM Agent default port
+    - 8080  # Host Gateway default port
+
