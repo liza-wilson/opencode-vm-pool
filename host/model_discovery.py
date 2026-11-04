@@ -145,6 +145,12 @@ class ModelDiscovery:
         providers = cfg_data.setdefault("provider", {})
         providers["vm-pool"] = {
             "name": "OpenCode VM Pool",
+            "npm": "@ai-sdk/openai-compatible",
+            "api": self.gateway_base_url,
+            "options": {
+                "baseURL": self.gateway_base_url,
+                "apiKey": "opencode-vm-pool",
+            },
             "package": "@ai-sdk/openai-compatible",
             "settings": {
                 "baseURL": self.gateway_base_url,

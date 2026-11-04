@@ -83,6 +83,8 @@ class TestModelDiscovery(unittest.TestCase):
         self.assertIn("provider", cfg)
         self.assertIn("vm-pool", cfg["provider"])
         pool_prov = cfg["provider"]["vm-pool"]
+        self.assertEqual(pool_prov["npm"], "@ai-sdk/openai-compatible")
+        self.assertEqual(pool_prov["options"]["baseURL"], "http://127.0.0.1:8080/v1")
         self.assertEqual(pool_prov["package"], "@ai-sdk/openai-compatible")
         self.assertEqual(pool_prov["settings"]["baseURL"], "http://127.0.0.1:8080/v1")
 

@@ -489,6 +489,12 @@ if not registered_via_module:
     providers = oc_data.setdefault("provider", {})
     providers["vm-pool"] = {
         "name": "OpenCode VM Pool",
+        "npm": "@ai-sdk/openai-compatible",
+        "api": "http://127.0.0.1:8080/v1",
+        "options": {
+            "baseURL": "http://127.0.0.1:8080/v1",
+            "apiKey": "opencode-vm-pool"
+        },
         "package": "@ai-sdk/openai-compatible",
         "settings": {
             "baseURL": "http://127.0.0.1:8080/v1",
