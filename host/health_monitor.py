@@ -12,7 +12,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from host.registry import VMRecord, VMRegistry
 
@@ -65,13 +65,15 @@ class HealthMonitor:
             was_offline = vm.status == "offline"
 
             if healthy:
-                # Clear cooldown if passed
+                # Check rate-limit cooldown
                 cooldown_passed = vm.rate_limited_until > 0 and now >= vm.rate_limited_until
-                new_status = "active"
+                is_still_rate_limited = vm.rate_limited_until > 0 and now < vm.rate_limited_until
+
+                new_status = "degraded" if is_still_rate_limited else "active"
                 self.registry.update_vm_status(
                     vm_id=vm.vm_id,
                     status=new_status,
-                    error_increment=-vm.error_count,  # Reset errors
+                    error_increment=-vm.error_count if not is_still_rate_limited else 0,
                     rate_limited_until=0.0 if cooldown_passed else None,
                 )
                 results[vm.vm_id] = "healthy"

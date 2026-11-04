@@ -81,7 +81,7 @@ StandardError=journal
 
 # File & Directory access
 ReadWritePaths=/etc/opencode-vm-pool /home /root /tmp
-PrivateTmp=true
+PrivateTmp=false
 NoNewPrivileges=true
 
 [Install]

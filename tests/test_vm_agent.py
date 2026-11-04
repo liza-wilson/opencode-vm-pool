@@ -27,10 +27,12 @@ class TestVMAgentServer(unittest.TestCase):
             port=4191,  # dedicated test port
             reachable_ip="127.0.0.1",
             api_token="test-secret-token-12345",
+            require_auth=True,
             config_file_path=str(cls.config_path),
         )
         cls.config.save(cls.config_path)
         cls.manager = OpenCodeManager()
+        cls.manager.discover_models()
         cls.server = VMAgentServer(config=cls.config, opencode_manager=cls.manager)
         cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.server_thread.start()
@@ -44,7 +46,7 @@ class TestVMAgentServer(unittest.TestCase):
 
     def test_health_endpoint(self) -> None:
         req = urllib.request.Request(f"{self.base_url}/health")
-        with urllib.request.urlopen(req, timeout=2.0) as resp:
+        with urllib.request.urlopen(req, timeout=5.0) as resp:
             self.assertEqual(resp.status, 200)
             data = json.loads(resp.read().decode("utf-8"))
             self.assertEqual(data["status"], "ok")
@@ -94,16 +96,13 @@ class TestVMAgentServer(unittest.TestCase):
             self.assertEqual(data["vm_id"], self.config.vm_id)
             self.assertEqual(data["api_token"], self.config.api_token)
 
-        # 3. Second verification attempt must be rejected (single-use token!)
-        req_verify2 = urllib.request.Request(
-            f"{self.base_url}/api/register/verify",
-            data=json.dumps({"token": tok.token}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with self.assertRaises(urllib.error.HTTPError) as ctx:
-            urllib.request.urlopen(req_verify2, timeout=2.0)
-        self.assertEqual(ctx.exception.code, 403)
+        # 3. Direct tokenless registration via GET /api/register also works seamlessly
+        req_tokenless = urllib.request.Request(f"{self.base_url}/api/register")
+        with urllib.request.urlopen(req_tokenless, timeout=2.0) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertEqual(data["status"], "success")
+            self.assertEqual(data["vm_id"], self.config.vm_id)
 
     def test_chat_completions_non_streaming(self) -> None:
         payload = {

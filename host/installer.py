@@ -34,9 +34,23 @@ logging.basicConfig(
 logger = logging.getLogger("opencode_host_installer")
 
 
-def verify_vm_registration(vm_url: str, token: str, timeout: float = 10.0) -> Dict[str, Any]:
-    """Call VM /api/register/verify with the single-use token."""
-    verify_url = f"{vm_url.rstrip('/')}/api/register/verify"
+def verify_vm_registration(vm_url: str, token: str = "", timeout: float = 10.0) -> Dict[str, Any]:
+    """Connect to VM /api/register or /api/register/verify to fetch registration details."""
+    clean_url = vm_url.rstrip("/")
+    # 1. Try tokenless direct registration GET /api/register
+    try:
+        get_req = urllib.request.Request(
+            f"{clean_url}/api/register",
+            headers={"User-Agent": "OpenCode-Host-Installer/1.0"},
+        )
+        with urllib.request.urlopen(get_req, timeout=timeout) as resp:
+            if resp.status == 200:
+                return json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        pass
+
+    # 2. Try POST /api/register/verify (or /api/register)
+    verify_url = f"{clean_url}/api/register/verify"
     payload = json.dumps({"token": token}).encode("utf-8")
     req = urllib.request.Request(
         verify_url,
@@ -47,15 +61,9 @@ def verify_vm_registration(vm_url: str, token: str, timeout: float = 10.0) -> Di
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             if resp.status == 200:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data
-            else:
-                raise RuntimeError(f"VM verification returned HTTP {resp.status}")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="ignore")
-        raise RuntimeError(f"VM verification failed (HTTP {e.code}): {body}")
+                return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
-        raise RuntimeError(f"Failed to connect to VM at {verify_url}: {e}")
+        raise RuntimeError(f"Failed to connect to VM at {clean_url}: {e}")
 
 
 def ensure_host_gateway_running(
@@ -190,7 +198,7 @@ def register_vm_on_host(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Host VM Registration")
     parser.add_argument("--vm-url", required=True, help="Reachable URL of VM (e.g. http://192.168.1.150:4096)")
-    parser.add_argument("--token", required=True, help="Single-use registration token")
+    parser.add_argument("--token", default="", help="Registration token (optional)")
     parser.add_argument("--gateway-host", default="127.0.0.1", help="Gateway host interface")
     parser.add_argument("--gateway-port", type=int, default=8080, help="Gateway port")
     parser.add_argument("--db", help="Path to SQLite database")

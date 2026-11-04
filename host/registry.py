@@ -83,9 +83,11 @@ class VMRegistry:
 
     @contextmanager
     def _get_connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+        conn = sqlite3.connect(str(self.db_path), timeout=15.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
         try:
             yield conn
         finally:
@@ -325,7 +327,12 @@ class VMRegistry:
         with self._get_connection() as conn:
             cur = conn.execute(
                 """
-                SELECT v.*, m.* FROM models m
+                SELECT 
+                    v.vm_id, v.vm_name, v.host, v.port, v.api_token, v.status AS vm_status,
+                    v.created_at, v.last_seen, v.rate_limited_until, v.error_count, v.metadata_json,
+                    m.unique_id, m.original_model_id, m.provider, m.display_name,
+                    m.context_length, m.capabilities_json, m.status AS model_status, m.last_checked
+                FROM models m
                 JOIN vms v ON m.vm_id = v.vm_id
                 WHERE (m.original_model_id = ? OR m.unique_id = ?)
                   AND v.status != 'offline'
@@ -370,13 +377,15 @@ class VMRegistry:
             meta = json.loads(row["metadata_json"])
         except Exception:
             pass
+        keys = row.keys()
+        status = row["vm_status"] if "vm_status" in keys else row["status"]
         return VMRecord(
             vm_id=row["vm_id"],
             vm_name=row["vm_name"],
             host=row["host"],
             port=row["port"],
             api_token=row["api_token"],
-            status=row["status"],
+            status=status,
             created_at=row["created_at"],
             last_seen=row["last_seen"],
             rate_limited_until=row["rate_limited_until"],
@@ -391,6 +400,8 @@ class VMRegistry:
             caps = json.loads(row["capabilities_json"])
         except Exception:
             pass
+        keys = row.keys()
+        status = row["model_status"] if "model_status" in keys else row["status"]
         return ModelRecord(
             unique_id=row["unique_id"],
             vm_id=row["vm_id"],
@@ -399,6 +410,6 @@ class VMRegistry:
             display_name=row["display_name"],
             context_length=row["context_length"],
             capabilities=caps,
-            status=row["status"],
+            status=status,
             last_checked=row["last_checked"],
         )

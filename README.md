@@ -188,32 +188,29 @@ The script automatically:
 ==========================================================
  VM Identifier: vm-ubuntu-worker (vm-7f3a)
  Reachable IP:  192.168.1.150:4096
- Token TTL:     15 minutes
 
  Run this command ON YOUR HOST MACHINE to register this VM:
 
-   curl -fsSL "http://192.168.1.150:4096/register/tok_8f92b7c4d1e2..." | bash
+   curl -fsSL "http://192.168.1.150:4096/register" | bash
 
 ==========================================================
 ```
 
 ### On the Host Machine
 
-Copy and run the generated command on the host terminal **exactly once**:
+Copy and run the generated command on the host terminal:
 
 ```bash
-curl -fsSL "http://192.168.1.150:4096/register/tok_8f92b7c4d1e2..." | bash
+curl -fsSL "http://192.168.1.150:4096/register" | bash
 ```
 
 The host installer automatically:
-1. Connects to the VM and verifies the registration token.
-2. Invalidates the token on the VM (single-use protection).
-3. Exchanges the token for permanent API credentials.
-4. Starts the Host Gateway service on `127.0.0.1:8080` if not already running.
-5. Saves the VM in the persistent SQLite registry (`registry.db`).
-6. Discovers all available models and generates collision-free model IDs.
-7. Automatically updates `~/.config/opencode/opencode.json` with the `vm-pool` provider.
-8. Displays the newly available models.
+1. Connects to the VM and fetches VM configuration and discovered models.
+2. Starts the Host Gateway service on `127.0.0.1:8080` if not already running.
+3. Saves the VM in the persistent SQLite registry (`registry.db`).
+4. Discovers all available models and generates collision-free model IDs.
+5. Automatically updates `~/.config/opencode/opencode.json` with the `vm-pool` provider.
+6. Displays the newly available models.
 
 **Example Host Output:**
 ```text
@@ -303,7 +300,7 @@ To prevent naming collisions when multiple VMs configure the same provider or mo
 | `./setup.sh --test` | Any | Runs the full 25-test automated test suite |
 | `bash vm/setup_opencode_vm.sh` | VM | Direct VM agent installer |
 | `bash scripts/install_host.sh` | Host | Direct host gateway installer |
-| `bash scripts/register_vm.sh <URL> <TOKEN>` | Host | Manually registers a VM by URL and token |
+| `bash scripts/register_vm.sh <URL>` | Host | Manually registers a VM by URL |
 | `bash scripts/update_vm.sh [VM_ID\|all]` | Host | Refreshes model catalog from one or all registered VMs |
 | `bash scripts/remove_vm.sh <VM_ID>` | Host | Unregisters a VM and removes its models from OpenCode |
 

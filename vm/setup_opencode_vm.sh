@@ -170,14 +170,12 @@ for i in $(seq 1 10); do
 done
 
 if [ "$HEALTH_OK" = false ]; then
-  echo "Notice: systemd service did not respond on port $PORT. Checking logs..."
-  $SUDO journalctl -u opencode-vm-agent.service -n 10 --no-pager 2>/dev/null || true
-  echo "--> Stopping any stale background agent..."
-  pkill -f "agent.py" 2>/dev/null || true
-  sleep 0.5
-  echo "--> Starting agent directly in background..."
-  nohup python3 "$SCRIPT_DIR/agent.py" --config "$CONFIG_PATH" --port "$PORT" > "$CONFIG_DIR/agent.log" 2>&1 &
-  sleep 1
+  echo "Notice: Checking background agent status..."
+  if ! pgrep -f "agent.py" >/dev/null 2>&1; then
+    echo "--> Starting agent directly in background..."
+    nohup python3 "$SCRIPT_DIR/agent.py" --config "$CONFIG_PATH" --port "$PORT" > "$CONFIG_DIR/agent.log" 2>&1 &
+    sleep 1
+  fi
   if curl -s -m 2 "http://127.0.0.1:$PORT/health" 2>/dev/null | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
     echo "--> Agent is now running in background."
     HEALTH_OK=true
@@ -186,15 +184,6 @@ if [ "$HEALTH_OK" = false ]; then
   fi
 else
   echo "--> Agent verified running and healthy on http://127.0.0.1:$PORT/health"
-fi
-
-# Verify registration token locally before displaying command
-echo "--> Verifying registration token endpoint..."
-if ! curl -s -m 2 "http://127.0.0.1:$PORT/register/$TOKEN" 2>/dev/null | grep -q "OpenCode VM Pool"; then
-  echo "Notice: Refreshing token state on running agent..."
-  pkill -f "agent.py" 2>/dev/null || true
-  nohup python3 "$SCRIPT_DIR/agent.py" --config "$CONFIG_PATH" --port "$PORT" > "$CONFIG_DIR/agent.log" 2>&1 &
-  sleep 1
 fi
 
 python3 -c "
@@ -209,7 +198,7 @@ for m in models:
     print(f'    - {m[\"id\"]} ({m[\"name\"]})')
 "
 
-REG_CMD="curl -fsSL \"http://${VM_IP}:${PORT}/register/${TOKEN}\" | bash"
+REG_CMD="curl -fsSL \"http://${VM_IP}:${PORT}/register\" | bash"
 
 echo ""
 echo "=========================================================="
@@ -217,7 +206,6 @@ echo " OPENCODE VM SETUP COMPLETE!"
 echo "=========================================================="
 echo " VM Identifier: $VM_NAME ($VM_ID)"
 echo " Reachable IP:  $VM_IP:$PORT"
-echo " Token TTL:     15 minutes"
 echo ""
 echo " Run this command ON YOUR HOST MACHINE to register this VM:"
 echo ""

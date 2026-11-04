@@ -215,17 +215,35 @@ class ModelRouter:
                 if e.code == 429:
                     logger.warning("VM %s hit rate limit (429). Triggering cooldown of %ds and failover.", vm.vm_id, cooldown)
                     self.registry.record_rate_limit(vm.vm_id, cooldown_seconds=cooldown)
+                    self.registry.record_routing_event(
+                        requested_model=requested_model,
+                        routed_vm_id=vm.vm_id,
+                        status="rate_limited",
+                        latency_ms=latency,
+                        error_message=last_error,
+                    )
+                    failed_vm_ids.append(vm.vm_id)
+                elif 400 <= e.code < 500:
+                    # Client error (bad prompt, invalid params) - do not degrade VM or failover
+                    logger.warning("Client request error (HTTP %d) on VM %s: %s", e.code, vm.vm_id, e.reason)
+                    try:
+                        err_body = e.read().decode("utf-8")
+                        err_json = json.loads(err_body)
+                        msg = err_json.get("error", {}).get("message", last_error) if isinstance(err_json, dict) else last_error
+                    except Exception:
+                        msg = last_error
+                    raise RoutingError(msg, status_code=e.code)
                 else:
+                    # 5xx Server Error - degrade VM and trigger failover
                     self.registry.update_vm_status(vm.vm_id, status="degraded", error_increment=1)
-
-                self.registry.record_routing_event(
-                    requested_model=requested_model,
-                    routed_vm_id=vm.vm_id,
-                    status="rate_limited" if e.code == 429 else "error",
-                    latency_ms=latency,
-                    error_message=last_error,
-                )
-                failed_vm_ids.append(vm.vm_id)
+                    self.registry.record_routing_event(
+                        requested_model=requested_model,
+                        routed_vm_id=vm.vm_id,
+                        status="error",
+                        latency_ms=latency,
+                        error_message=last_error,
+                    )
+                    failed_vm_ids.append(vm.vm_id)
 
             except Exception as e:
                 latency = (time.time() - start_time) * 1000

@@ -93,7 +93,7 @@ class TestEndToEndWorkflow(unittest.TestCase):
         vm1_tok = self.vm1_cfg.create_registration_token(ttl_seconds=300)
         self.vm1_cfg.save()
         reg_cmd = self.vm1_cfg.get_registration_command(vm1_tok.token)
-        self.assertIn(f"http://127.0.0.1:4181/register/{vm1_tok.token}", reg_cmd)
+        self.assertIn(f"http://127.0.0.1:4181/register", reg_cmd)
 
         # Step 2: Host executes registration (verifying single-use token against VM1)
         vm1_verified = verify_vm_registration("http://127.0.0.1:4181", vm1_tok.token)
@@ -122,10 +122,8 @@ class TestEndToEndWorkflow(unittest.TestCase):
 
         self.assertIn(vm1_sample_unique, provider["models"])
 
-        # Step 4: Register VM2
-        vm2_tok = self.vm2_cfg.create_registration_token(ttl_seconds=300)
-        self.vm2_cfg.save()
-        vm2_verified = verify_vm_registration("http://127.0.0.1:4182", vm2_tok.token)
+        # Step 4: Register VM2 (Tokenless registration)
+        vm2_verified = verify_vm_registration("http://127.0.0.1:4182")
         self.assertEqual(vm2_verified["status"], "success")
 
         register_vm_on_host(

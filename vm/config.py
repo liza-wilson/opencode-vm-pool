@@ -131,6 +131,7 @@ class VMConfig:
     opencode_server_port: int = 4099
     opencode_server_password: str = ""
     opencode_server_username: str = "opencode"
+    require_auth: bool = False
     created_at: float = dataclasses.field(default_factory=time.time)
     config_file_path: Optional[str] = None
 
@@ -182,10 +183,10 @@ class VMConfig:
             token.used = True
         return True
 
-    def get_registration_command(self, token_str: str) -> str:
+    def get_registration_command(self, token_str: str = "") -> str:
         """Return the curl registration command for host execution."""
         ip = self.reachable_ip or "127.0.0.1"
-        return f'curl -fsSL "http://{ip}:{self.port}/register/{token_str}" | bash'
+        return f'curl -fsSL "http://{ip}:{self.port}/register" | bash'
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -202,6 +203,7 @@ class VMConfig:
             "opencode_server_port": self.opencode_server_port,
             "opencode_server_password": self.opencode_server_password,
             "opencode_server_username": self.opencode_server_username,
+            "require_auth": self.require_auth,
             "created_at": self.created_at,
         }
 
@@ -221,6 +223,7 @@ class VMConfig:
             opencode_server_port=data.get("opencode_server_port", 4099),
             opencode_server_password=data.get("opencode_server_password", ""),
             opencode_server_username=data.get("opencode_server_username", "opencode"),
+            require_auth=data.get("require_auth", False),
             created_at=data.get("created_at", time.time()),
         )
 

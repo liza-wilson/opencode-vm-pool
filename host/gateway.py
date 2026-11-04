@@ -178,8 +178,9 @@ class GatewayHTTPHandler(BaseHTTPRequestHandler):
                     self.send_response(HTTPStatus.OK)
                     self.send_header("Content-Type", "text/event-stream")
                     self.send_header("Cache-Control", "no-cache")
-                    self.send_header("Connection", "keep-alive")
+                    self.send_header("Connection", "close")
                     self.end_headers()
+                    self.close_connection = True
 
                     try:
                         for chunk in stream_gen:
@@ -310,6 +311,10 @@ class HostGatewayServer(ThreadingHTTPServer):
         """Gracefully stop background tasks and close server."""
         logger.info("Shutting down Host Gateway...")
         self.health_monitor.stop()
+        try:
+            self.shutdown()
+        except Exception:
+            pass
         self.server_close()
 
 

@@ -148,6 +148,7 @@ class ModelDiscovery:
             "package": "@ai-sdk/openai-compatible",
             "settings": {
                 "baseURL": self.gateway_base_url,
+                "apiKey": "opencode-vm-pool",
             },
             "models": provider_models,
         }
