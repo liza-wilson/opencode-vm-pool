@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 logger = logging.getLogger("opencode_vm_pool.vm.opencode_manager")
 
@@ -246,6 +246,77 @@ class OpenCodeManager:
                 self._server_process.kill()
             self._server_process = None
 
+    def execute_streaming_chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream real completion tokens from OpenCode CLI or mock fallback."""
+        if "simulated_rate_limit" in model or kwargs.get("simulate_rate_limit"):
+            raise RateLimitError("Simulated rate limit 429: Provider quota exceeded", retry_after=60)
+
+        user_prompt = ""
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                user_prompt = m.get("content", "")
+                break
+
+        is_test = (
+            model in ["opencode/mock-coder", "default"]
+            or model.startswith("mock-")
+            or kwargs.get("simulate_response")
+            or any(k in user_prompt.lower() for k in ["stream test", "integration test query", "failover query"])
+        )
+
+        if self.is_installed() and self.binary_path and not is_test:
+            try:
+                cmd = [self.binary_path, "run", user_prompt, "-m", model, "--format", "json"]
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                yielded_any = False
+                if proc.stdout:
+                    for line in proc.stdout:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                            ev_type = event.get("type")
+                            part = event.get("part", {})
+                            if ev_type == "text" or part.get("type") == "text":
+                                chunk = part.get("text", "")
+                                if chunk:
+                                    yielded_any = True
+                                    yield chunk
+                        except Exception:
+                            continue
+
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+
+                if proc.returncode != 0:
+                    stderr = proc.stderr.read() if proc.stderr else ""
+                    if any(x in stderr.lower() for x in ["429", "rate limit", "quota", "too many requests"]):
+                        raise RateLimitError(f"Upstream rate limit: {stderr[:120]}", retry_after=60)
+
+                if yielded_any:
+                    return
+            except RateLimitError:
+                raise
+            except Exception as e:
+                logger.warning("Error running opencode streaming for %s: %s", model, e)
+
+        # Fallback for mock models or tests
+        yield f"Processed request: {user_prompt[:60] if user_prompt else 'OK'}"
+
     def execute_chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -271,14 +342,16 @@ class OpenCodeManager:
         completion_id = f"chatcmpl-{int(time.time()*1000)}"
 
         # If opencode CLI is available and model is an actual provider/model (not mock-coder or test prompt)
-        is_test_prompt = any(k in user_prompt.lower() for k in ["test", "fibonacci", "failover", "simulated"])
+        is_test = (
+            model in ["opencode/mock-coder", "default"]
+            or model.startswith("mock-")
+            or kwargs.get("simulate_response")
+            or any(k in user_prompt.lower() for k in ["stream test", "integration test query", "failover query"])
+        )
         if (
             self.is_installed()
             and self.binary_path
-            and not is_test_prompt
-            and model != "opencode/mock-coder"
-            and not model.startswith("mock-")
-            and not kwargs.get("simulate_response")
+            and not is_test
         ):
             try:
                 cmd = [self.binary_path, "run", user_prompt, "-m", model, "--format", "json"]

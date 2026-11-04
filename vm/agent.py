@@ -260,6 +260,8 @@ class VMAgentHandler(BaseHTTPRequestHandler):
         if "simulated_rate_limit" in model or payload.get("simulate_rate_limit"):
             raise RateLimitError("Simulated rate limit 429", retry_after=60)
 
+        completion_id = f"chatcmpl-{int(time.time()*1000)}"
+
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -267,21 +269,37 @@ class VMAgentHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
 
-        user_content = ""
-        for m in reversed(payload.get("messages", [])):
-            if m.get("role") == "user":
-                user_content = m.get("content", "")
-                break
+        filtered_kwargs = {
+            k: v for k, v in payload.items() if k not in ["messages", "model", "stream"]
+        }
 
-        chunks = [
-            f"[OpenCode VM Pool streaming from {self.server.config.vm_name} - {model}]\n",
-            f"Response: ",
-            user_content[:60] if user_content else "Task completed successfully.",
-        ]
+        try:
+            stream_iter = self.server.opencode_manager.execute_streaming_chat_completion(
+                messages=payload.get("messages", []),
+                model=model,
+                **filtered_kwargs,
+            )
 
-        completion_id = f"chatcmpl-{int(time.time()*1000)}"
-        for i, chunk_text in enumerate(chunks):
-            data = {
+            for chunk_text in stream_iter:
+                data = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": chunk_text},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                msg = f"data: {json.dumps(data)}\n\n"
+                self.wfile.write(msg.encode("utf-8"))
+                self.wfile.flush()
+
+            # Final stop chunk
+            stop_data = {
                 "id": completion_id,
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
@@ -289,18 +307,30 @@ class VMAgentHandler(BaseHTTPRequestHandler):
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"content": chunk_text},
-                        "finish_reason": None if i < len(chunks) - 1 else "stop",
+                        "delta": {},
+                        "finish_reason": "stop",
                     }
                 ],
             }
-            msg = f"data: {json.dumps(data)}\n\n"
-            self.wfile.write(msg.encode("utf-8"))
+            self.wfile.write(f"data: {json.dumps(stop_data)}\n\n".encode("utf-8"))
+            self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
-            time.sleep(0.05)
 
-        self.wfile.write(b"data: [DONE]\n\n")
-        self.wfile.flush()
+        except RateLimitError as e:
+            err_data = {
+                "error": {
+                    "message": str(e),
+                    "type": "rate_limit_exceeded",
+                    "code": 429,
+                }
+            }
+            self.wfile.write(f"data: {json.dumps(err_data)}\n\n".encode("utf-8"))
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+        except Exception as e:
+            logger.error("Streaming error: %s", e)
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
 
 
 class VMAgentServer(ThreadingHTTPServer):
