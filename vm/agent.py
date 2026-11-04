@@ -281,22 +281,28 @@ class VMAgentHandler(BaseHTTPRequestHandler):
             )
 
             for chunk_text in stream_iter:
-                data = {
-                    "id": completion_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": model,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "delta": {"content": chunk_text},
-                            "finish_reason": None,
-                        }
-                    ],
-                }
-                msg = f"data: {json.dumps(data)}\n\n"
-                self.wfile.write(msg.encode("utf-8"))
-                self.wfile.flush()
+                # Stream words smoothly so the client OpenCode UI renders text in real-time
+                words = chunk_text.split(" ")
+                for i, word in enumerate(words):
+                    piece = word + (" " if i < len(words) - 1 else "")
+                    data = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": model,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": piece},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                    msg = f"data: {json.dumps(data)}\n\n"
+                    self.wfile.write(msg.encode("utf-8"))
+                    self.wfile.flush()
+                    if len(words) > 1:
+                        time.sleep(0.01)
 
             # Final stop chunk
             stop_data = {

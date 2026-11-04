@@ -156,8 +156,8 @@ class ModelRouter:
                     attempts,
                 )
 
-                # Open connection
-                resp = urllib.request.urlopen(req, timeout=30.0)
+                # Open connection with generous timeout for large LLM code generations
+                resp = urllib.request.urlopen(req, timeout=180.0)
                 latency = (time.time() - start_time) * 1000
 
                 if stream:

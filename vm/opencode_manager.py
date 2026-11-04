@@ -281,7 +281,10 @@ class OpenCodeManager:
                 )
                 yielded_any = False
                 if proc.stdout:
-                    for line in proc.stdout:
+                    while True:
+                        line = proc.stdout.readline()
+                        if not line:
+                            break
                         line = line.strip()
                         if not line:
                             continue
@@ -298,11 +301,11 @@ class OpenCodeManager:
                             continue
 
                 try:
-                    proc.wait(timeout=10)
+                    proc.wait(timeout=180)
                 except subprocess.TimeoutExpired:
                     proc.kill()
 
-                if proc.returncode != 0:
+                if proc.returncode != 0 and not yielded_any:
                     stderr = proc.stderr.read() if proc.stderr else ""
                     if any(x in stderr.lower() for x in ["429", "rate limit", "quota", "too many requests"]):
                         raise RateLimitError(f"Upstream rate limit: {stderr[:120]}", retry_after=60)
