@@ -230,9 +230,9 @@ class ModelRouter:
                 last_status_code = e.code
                 last_error = f"HTTP {e.code}: {e.reason}"
 
-                # Extract retry-after if provided
+                # Extract retry-after if provided (cap at 15s so single VM setups recover quickly)
                 retry_header = e.headers.get("Retry-After") if e.headers else None
-                cooldown = int(retry_header) if retry_header and retry_header.isdigit() else self.default_cooldown
+                cooldown = min(15, int(retry_header)) if retry_header and retry_header.isdigit() else 10
                 retry_after_header = str(cooldown)
 
                 if e.code == 429:

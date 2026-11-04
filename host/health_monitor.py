@@ -19,7 +19,7 @@ from host.registry import VMRecord, VMRegistry
 logger = logging.getLogger("opencode_vm_pool.host.health_monitor")
 
 DEFAULT_CHECK_INTERVAL = 30.0
-HEALTH_TIMEOUT = 3.0
+HEALTH_TIMEOUT = 10.0
 MAX_CONSECUTIVE_ERRORS = 3
 
 

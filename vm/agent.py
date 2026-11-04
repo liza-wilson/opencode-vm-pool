@@ -93,9 +93,9 @@ class VMAgentHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        # 1. Health check: /health
+        # 1. Health check: /health (Instant, non-blocking)
         if path == "/health":
-            models = self.server.opencode_manager.discover_models()
+            cached_models = self.server.opencode_manager._models_cache or []
             self._send_json(
                 HTTPStatus.OK,
                 {
@@ -106,7 +106,7 @@ class VMAgentHandler(BaseHTTPRequestHandler):
                     "port": self.server.config.port,
                     "opencode_installed": self.server.opencode_manager.is_installed(),
                     "opencode_version": self.server.opencode_manager.get_version(),
-                    "models_count": len(models),
+                    "models_count": len(cached_models),
                     "uptime_seconds": int(time.time() - self.server.start_time),
                 },
             )
@@ -351,6 +351,11 @@ class VMAgentServer(ThreadingHTTPServer):
             server_username=config.opencode_server_username,
         )
         self.start_time = time.time()
+        # Pre-warm model discovery once on startup
+        try:
+            self.opencode_manager.discover_models()
+        except Exception as e:
+            logger.debug("Startup model discovery notice: %s", e)
 
     def generate_host_registration_script(self, token_str: str = "") -> str:
         """Generate verified bash script served to the host upon curl registration."""

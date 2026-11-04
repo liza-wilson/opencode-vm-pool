@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
@@ -35,6 +36,7 @@ class OpenCodeManager:
         self._models_cache: Optional[List[Dict[str, Any]]] = None
         self._models_cache_time: float = 0.0
         self._version_cache: Optional[str] = None
+        self._exec_lock = threading.Lock()
 
     def _find_opencode_binary(self) -> Optional[str]:
         """Locate the opencode binary on the system."""
@@ -307,6 +309,8 @@ class OpenCodeManager:
         )
 
         if self.is_installed() and self.binary_path and not is_test:
+            if not self._exec_lock.acquire(blocking=True, timeout=5.0):
+                raise RateLimitError("VM is currently processing another query. Please retry in a few seconds.", retry_after=5)
             try:
                 cmd = [self.binary_path, "run", full_prompt, "-m", model, "--format", "json", "--pure"]
                 proc = subprocess.Popen(
@@ -350,7 +354,7 @@ class OpenCodeManager:
                             continue
 
                 try:
-                    proc.wait(timeout=10)
+                    proc.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     proc.kill()
 
@@ -380,6 +384,8 @@ class OpenCodeManager:
             except Exception as e:
                 logger.warning("Error running opencode streaming for %s: %s", model, e)
                 raise
+            finally:
+                self._exec_lock.release()
 
         # Fallback for mock models or tests
         yield f"Processed request: {user_prompt[:60] if user_prompt else 'OK'}"
@@ -415,6 +421,8 @@ class OpenCodeManager:
             and self.binary_path
             and not is_test
         ):
+            if not self._exec_lock.acquire(blocking=True, timeout=5.0):
+                raise RateLimitError("VM is currently processing another query. Please retry in a few seconds.", retry_after=5)
             try:
                 cmd = [self.binary_path, "run", full_prompt, "-m", model, "--format", "json", "--pure"]
                 proc = subprocess.run(
@@ -422,7 +430,7 @@ class OpenCodeManager:
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
-                    timeout=120,
+                    timeout=25,
                 )
                 if proc.returncode == 0 and proc.stdout:
                     text_parts = []
@@ -488,6 +496,8 @@ class OpenCodeManager:
             except Exception as e:
                 logger.warning("opencode run failed for model %s: %s.", model, e)
                 raise
+            finally:
+                self._exec_lock.release()
 
         # Standard / test fallback response
         reply_content = (
