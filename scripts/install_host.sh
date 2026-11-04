@@ -15,7 +15,15 @@ command -v python3 >/dev/null 2>&1 || { echo "Error: Python 3.11+ is required." 
 PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 echo "--> Python version: $PY_VER"
 
-# 2. Setup Host Config Directory
+# 2. Clean existing OpenCode running processes and stale cache footprints
+echo "--> Wiping stale OpenCode footprints and terminating running processes..."
+pkill -9 -f "opencode" 2>/dev/null || true
+rm -rf "$HOME/.cache/opencode" 2>/dev/null || true
+rm -rf "$HOME/.local/share/opencode/snapshot" 2>/dev/null || true
+rm -rf "$HOME/.local/share/opencode/tool-output" 2>/dev/null || true
+rm -f "$HOME/.local/share/opencode/opencode.db-wal" "$HOME/.local/share/opencode/opencode.db-shm" 2>/dev/null || true
+
+# 3. Setup Host Config Directory
 CONFIG_DIR="$HOME/.config/opencode-vm-pool"
 mkdir -p "$CONFIG_DIR"
 chmod 700 "$CONFIG_DIR" 2>/dev/null || true

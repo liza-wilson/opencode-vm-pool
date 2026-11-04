@@ -246,6 +246,47 @@ class OpenCodeManager:
                 self._server_process.kill()
             self._server_process = None
 
+    def _extract_prompt_text(self, content: Any) -> str:
+        """Extract clean text from string, list of blocks, or dictionary."""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text_val = item.get("text") or item.get("content") or ""
+                    if text_val:
+                        parts.append(str(text_val))
+            return "\n".join(parts)
+        if isinstance(content, dict):
+            return str(content.get("text") or content.get("content") or "")
+        return str(content) if content is not None else ""
+
+    def _build_full_prompt(self, messages: List[Dict[str, Any]]) -> Tuple[str, str]:
+        """Build conversation prompt and extract primary user prompt."""
+        user_prompt = ""
+        prompt_lines = []
+        for m in messages:
+            role = m.get("role", "user")
+            content = self._extract_prompt_text(m.get("content", ""))
+            if role == "user":
+                user_prompt = content
+            if content:
+                if role == "system":
+                    prompt_lines.append(f"Instructions: {content}")
+                elif role == "user":
+                    prompt_lines.append(f"User: {content}")
+                elif role == "assistant":
+                    prompt_lines.append(f"Assistant: {content}")
+
+        if len(messages) <= 1:
+            full_prompt = user_prompt
+        else:
+            full_prompt = "\n\n".join(prompt_lines) if prompt_lines else user_prompt
+        return user_prompt, full_prompt
+
     def execute_streaming_chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -256,11 +297,7 @@ class OpenCodeManager:
         if "simulated_rate_limit" in model or kwargs.get("simulate_rate_limit"):
             raise RateLimitError("Simulated rate limit 429: Provider quota exceeded", retry_after=60)
 
-        user_prompt = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                user_prompt = m.get("content", "")
-                break
+        user_prompt, full_prompt = self._build_full_prompt(messages)
 
         is_test = (
             model in ["opencode/mock-coder", "default"]
@@ -271,9 +308,10 @@ class OpenCodeManager:
 
         if self.is_installed() and self.binary_path and not is_test:
             try:
-                cmd = [self.binary_path, "run", user_prompt, "-m", model, "--format", "json"]
+                cmd = [self.binary_path, "run", full_prompt, "-m", model, "--format", "json", "--pure"]
                 proc = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
@@ -292,23 +330,48 @@ class OpenCodeManager:
                             event = json.loads(line)
                             ev_type = event.get("type")
                             part = event.get("part", {})
+
+                            # Immediate error detection
+                            if ev_type == "error" or part.get("type") == "error":
+                                err_msg = str(event.get("error") or part.get("error") or "OpenCode model error")
+                                proc.kill()
+                                if any(x in err_msg.lower() for x in ["limit", "quota", "429", "rate", "busy", "exceeded"]):
+                                    raise RateLimitError(f"Upstream quota limit: {err_msg[:120]}", retry_after=60)
+                                raise RuntimeError(f"OpenCode execution error: {err_msg[:120]}")
+
                             if ev_type == "text" or part.get("type") == "text":
                                 chunk = part.get("text", "")
                                 if chunk:
                                     yielded_any = True
                                     yield chunk
+                        except RateLimitError:
+                            raise
                         except Exception:
                             continue
 
                 try:
-                    proc.wait(timeout=180)
+                    proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
 
-                if proc.returncode != 0 and not yielded_any:
+                if not yielded_any:
                     stderr = proc.stderr.read() if proc.stderr else ""
-                    if any(x in stderr.lower() for x in ["429", "rate limit", "quota", "too many requests"]):
-                        raise RateLimitError(f"Upstream rate limit: {stderr[:120]}", retry_after=60)
+                    log_tail = ""
+                    log_file = Path.home() / ".local" / "share" / "opencode" / "log" / "opencode.log"
+                    if log_file.exists():
+                        try:
+                            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                                lines = f.readlines()[-25:]
+                                log_tail = "".join(lines)
+                        except Exception:
+                            pass
+
+                    combined_err = f"{stderr}\n{log_tail}".lower()
+                    if any(x in combined_err for x in ["limit", "quota", "429", "rate limit", "too many requests", "retryerror"]):
+                        raise RateLimitError("Upstream model rate limit or free quota exceeded", retry_after=60)
+
+                    if proc.returncode != 0:
+                        raise RuntimeError(f"OpenCode run failed (code {proc.returncode}): {stderr[:150] or log_tail[-150:]}")
 
                 if yielded_any:
                     return
@@ -316,6 +379,7 @@ class OpenCodeManager:
                 raise
             except Exception as e:
                 logger.warning("Error running opencode streaming for %s: %s", model, e)
+                raise
 
         # Fallback for mock models or tests
         yield f"Processed request: {user_prompt[:60] if user_prompt else 'OK'}"
@@ -335,12 +399,7 @@ class OpenCodeManager:
         if "simulated_rate_limit" in model or kwargs.get("simulate_rate_limit"):
             raise RateLimitError("Simulated rate limit 429: Provider quota exceeded", retry_after=60)
 
-        # Extract user prompt
-        user_prompt = ""
-        for m in reversed(messages):
-            if m.get("role") == "user":
-                user_prompt = m.get("content", "")
-                break
+        user_prompt, full_prompt = self._build_full_prompt(messages)
 
         completion_id = f"chatcmpl-{int(time.time()*1000)}"
 
@@ -357,8 +416,14 @@ class OpenCodeManager:
             and not is_test
         ):
             try:
-                cmd = [self.binary_path, "run", user_prompt, "-m", model, "--format", "json"]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                cmd = [self.binary_path, "run", full_prompt, "-m", model, "--format", "json", "--pure"]
+                proc = subprocess.run(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
                 if proc.returncode == 0 and proc.stdout:
                     text_parts = []
                     prompt_tokens = 0
@@ -405,8 +470,24 @@ class OpenCodeManager:
                                 "total_tokens": total_tokens or (len(user_prompt.split()) + len(full_content.split())),
                             },
                         }
+                else:
+                    stderr = proc.stderr or ""
+                    log_tail = ""
+                    log_file = Path.home() / ".local" / "share" / "opencode" / "log" / "opencode.log"
+                    if log_file.exists():
+                        try:
+                            with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                                log_tail = "".join(f.readlines()[-25:])
+                        except Exception:
+                            pass
+                    combined_err = f"{stderr}\n{log_tail}".lower()
+                    if any(x in combined_err for x in ["limit", "quota", "429", "rate limit", "too many requests"]):
+                        raise RateLimitError("Upstream rate limit: quota exceeded", retry_after=60)
+            except RateLimitError:
+                raise
             except Exception as e:
-                logger.warning("opencode run failed for model %s: %s. Using fallback.", model, e)
+                logger.warning("opencode run failed for model %s: %s.", model, e)
+                raise
 
         # Standard / test fallback response
         reply_content = (

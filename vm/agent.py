@@ -281,28 +281,24 @@ class VMAgentHandler(BaseHTTPRequestHandler):
             )
 
             for chunk_text in stream_iter:
-                # Stream words smoothly so the client OpenCode UI renders text in real-time
-                words = chunk_text.split(" ")
-                for i, word in enumerate(words):
-                    piece = word + (" " if i < len(words) - 1 else "")
-                    data = {
-                        "id": completion_id,
-                        "object": "chat.completion.chunk",
-                        "created": int(time.time()),
-                        "model": model,
-                        "choices": [
-                            {
-                                "index": 0,
-                                "delta": {"content": piece},
-                                "finish_reason": None,
-                            }
-                        ],
-                    }
-                    msg = f"data: {json.dumps(data)}\n\n"
-                    self.wfile.write(msg.encode("utf-8"))
-                    self.wfile.flush()
-                    if len(words) > 1:
-                        time.sleep(0.01)
+                if not chunk_text:
+                    continue
+                data = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {"content": chunk_text},
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                msg = f"data: {json.dumps(data)}\n\n"
+                self.wfile.write(msg.encode("utf-8"))
+                self.wfile.flush()
 
             # Final stop chunk
             stop_data = {
@@ -367,13 +363,20 @@ set -euo pipefail
 VM_URL="{vm_url}"
 
 echo "=========================================================="
-echo " OpenCode VM Pool - Host Registration"
+echo " OpenCode VM Pool - Host Registration & Clean Setup"
 echo " Target VM: {self.config.vm_name} ({self.config.vm_id})"
 echo " Endpoint:  $VM_URL"
 echo "=========================================================="
 
 command -v curl >/dev/null 2>&1 || {{ echo "Error: curl is required." >&2; exit 1; }}
 command -v python3 >/dev/null 2>&1 || {{ echo "Error: python3 is required." >&2; exit 1; }}
+
+echo "--> Wiping stale OpenCode footprints and terminating running processes..."
+pkill -9 -f "opencode" 2>/dev/null || true
+rm -rf "$HOME/.cache/opencode" 2>/dev/null || true
+rm -rf "$HOME/.local/share/opencode/snapshot" 2>/dev/null || true
+rm -rf "$HOME/.local/share/opencode/tool-output" 2>/dev/null || true
+rm -f "$HOME/.local/share/opencode/opencode.db-wal" "$HOME/.local/share/opencode/opencode.db-shm" 2>/dev/null || true
 
 echo "--> Connecting to VM..."
 RESPONSE=$(curl -fsSL "$VM_URL/api/register" 2>/dev/null || curl -fsSL -X POST "$VM_URL/api/register" 2>/dev/null || true)
@@ -546,17 +549,23 @@ if not registered_via_module:
 
     print(f"--> Host OpenCode config successfully updated at: {oc_conf}")
 
+    # Ensure Host Gateway picks up fresh changes (restart systemd service if available)
+    try:
+        subprocess.run(["systemctl", "--user", "restart", "opencode-host-gateway.service"], capture_output=True, timeout=5)
+    except Exception:
+        pass
+
     # Check if Host Gateway is running on 8080
     gateway_running = False
     try:
-        with urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=1.0) as resp:
+        with urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=1.5) as resp:
             if resp.status == 200:
                 gateway_running = True
     except Exception:
         pass
 
     if gateway_running:
-        print("--> Host Gateway is active at http://127.0.0.1:8080")
+        print("--> Host Gateway is active and reloaded at http://127.0.0.1:8080")
     else:
         print("Notice: Start the Host Gateway with: ./setup.sh --host")
 

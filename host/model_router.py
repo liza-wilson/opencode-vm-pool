@@ -133,6 +133,29 @@ class ModelRouter:
             fwd_payload = dict(payload)
             fwd_payload["model"] = original_model
             fwd_payload["stream"] = stream
+
+            # Normalize messages so content is always clean string (handles modern AI-SDK/editor lists)
+            clean_messages = []
+            for m in payload.get("messages", []):
+                role = m.get("role", "user")
+                raw_c = m.get("content", "")
+                if isinstance(raw_c, list):
+                    parts = []
+                    for p in raw_c:
+                        if isinstance(p, str):
+                            parts.append(p)
+                        elif isinstance(p, dict):
+                            t = p.get("text") or p.get("content") or ""
+                            if t:
+                                parts.append(str(t))
+                    clean_c = "\n".join(parts)
+                elif isinstance(raw_c, dict):
+                    clean_c = str(raw_c.get("text") or raw_c.get("content") or "")
+                else:
+                    clean_c = str(raw_c) if raw_c is not None else ""
+                clean_messages.append({"role": role, "content": clean_c})
+            fwd_payload["messages"] = clean_messages
+
             req_data = json.dumps(fwd_payload).encode("utf-8")
 
             req = urllib.request.Request(
