@@ -16,12 +16,10 @@ PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_i
 echo "--> Python version: $PY_VER"
 
 # 2. Clean existing OpenCode running processes and stale cache footprints
-echo "--> Wiping stale OpenCode footprints and terminating running processes..."
-pkill -9 -f "opencode" 2>/dev/null || true
-rm -rf "$HOME/.cache/opencode" 2>/dev/null || true
-rm -rf "$HOME/.local/share/opencode/snapshot" 2>/dev/null || true
-rm -rf "$HOME/.local/share/opencode/tool-output" 2>/dev/null || true
-rm -f "$HOME/.local/share/opencode/opencode.db-wal" "$HOME/.local/share/opencode/opencode.db-shm" 2>/dev/null || true
+# DISABLED: the upstream script runs `pkill -9 -f opencode` and deletes the OpenCode
+# cache/state directories. That terminates any running OpenCode session (including the
+# agent performing this install) and destroys data, so it is skipped here.
+echo "--> Skipping destructive OpenCode process/cache cleanup (patched out)"
 
 # 3. Setup Host Config Directory
 CONFIG_DIR="$HOME/.config/opencode-vm-pool"

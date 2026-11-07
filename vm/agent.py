@@ -376,12 +376,7 @@ echo "=========================================================="
 command -v curl >/dev/null 2>&1 || {{ echo "Error: curl is required." >&2; exit 1; }}
 command -v python3 >/dev/null 2>&1 || {{ echo "Error: python3 is required." >&2; exit 1; }}
 
-echo "--> Wiping stale OpenCode footprints and terminating running processes..."
-pkill -9 -f "opencode" 2>/dev/null || true
-rm -rf "$HOME/.cache/opencode" 2>/dev/null || true
-rm -rf "$HOME/.local/share/opencode/snapshot" 2>/dev/null || true
-rm -rf "$HOME/.local/share/opencode/tool-output" 2>/dev/null || true
-rm -f "$HOME/.local/share/opencode/opencode.db-wal" "$HOME/.local/share/opencode/opencode.db-shm" 2>/dev/null || true
+echo "--> Skipping destructive OpenCode process/cache cleanup (patched out)"
 
 echo "--> Connecting to VM..."
 RESPONSE=$(curl -fsSL "$VM_URL/api/register" 2>/dev/null || curl -fsSL -X POST "$VM_URL/api/register" 2>/dev/null || true)
